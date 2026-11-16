@@ -1,0 +1,43 @@
+name: full
+on:
+  schedule:
+    - cron: '35 20,4,10,14 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: capture
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: capture
+        run: |
+          set -euo pipefail
+          TS=$(date -u +%s000)
+          CB=$(date -u +%s)
+          mkdir -p raw
+          grab () {
+            curl -sL --compressed --max-time 45 --retry 2 \
+              -A 'Mozilla/5.0' -H 'Cache-Control: no-cache' \
+              "$1?nocache=$CB" || echo FETCH_FAILED
+          }
+          B='https://rustsamrajya.live'
+          jq -n \
+            --arg ts "$TS" \
+            --arg at "$(date -u +%FT%TZ)" \
+            --arg home      "$(grab "$B/")" \
+            --arg vending   "$(grab "$B/leaderboard/vending")" \
+            --arg raiding   "$(grab "$B/leaderboard/raiding")" \
+            --arg crafted   "$(grab "$B/leaderboard/activity/items_crafted")" \
+            --arg resources "$(grab "$B/leaderboard/resources")" \
+            '{ts:($ts|tonumber),capturedAt:$at,home:$home,vending:$vending,
+              raiding:$raiding,crafted:$crafted,resources:$resources}' > "raw/$TS.json"
+      - name: commit
+        run: |
+          git config user.name 'capture-bot'
+          git config user.email 'capture-bot@users.noreply.github.com'
+          git add -A
+          git diff --staged --quiet || git commit -m "full $(date -u +%FT%TZ)"
+          git pull --rebase --autostash || true
+          git push
