@@ -1,0 +1,32 @@
+name: pulse
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: capture
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: capture
+        run: |
+          set -euo pipefail
+          TS=$(date -u +%s000)
+          CB=$(date -u +%s)
+          mkdir -p pulse
+          HOME_HTML=$(curl -sL --compressed --max-time 45 \
+            -A 'Mozilla/5.0' -H 'Cache-Control: no-cache' \
+            "https://rustsamrajya.live/?nocache=$CB" || echo FETCH_FAILED)
+          jq -n --arg ts "$TS" --arg at "$(date -u +%FT%TZ)" --arg home "$HOME_HTML" \
+            '{ts:($ts|tonumber),capturedAt:$at,home:$home}' > "pulse/$TS.json"
+      - name: commit
+        run: |
+          git config user.name 'capture-bot'
+          git config user.email 'capture-bot@users.noreply.github.com'
+          git add -A
+          git diff --staged --quiet || git commit -m "pulse $(date -u +%FT%TZ)"
+          git pull --rebase --autostash || true
+          git push
